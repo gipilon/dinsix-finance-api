@@ -1,3 +1,5 @@
+from app.api.dependencies import get_current_user
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,3 +38,7 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db)):
 @router.get("", response_model=list[UserRead])
 def list_users(db: Session = Depends(get_db)):
     return db.scalars(select(User).order_by(User.name)).all()
+
+@router.get("/me", response_model=UserRead)
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user

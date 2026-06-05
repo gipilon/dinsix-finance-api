@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     db_name: str
     db_user: str
     db_password: str
+    secret_key: str
+    access_token_expire_minutes: int
 
     model_config = SettingsConfigDict(env_file=".env")
 
