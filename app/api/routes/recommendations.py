@@ -1,17 +1,16 @@
 from calendar import monthrange
 from datetime import date
-
-from sqlalchemy import func
-from app.models.transaction import Transaction, TransactionType
-
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_current_user
 from app.db.dependencies import get_db
 from app.models.leisure_place import LeisurePlace
+from app.models.transaction import Transaction, TransactionType
+from app.models.user import User
 from app.schemas.recommendation import (
     LeisureRecommendation,
     LeisureRecommendationResponse,
@@ -59,23 +58,6 @@ def recommend_leisure_places(
     )
 
 
-def build_recommendation_reason(
-    leisure_place: LeisurePlace,
-    available_budget: Decimal,
-) -> str:
-    remaining_budget = available_budget - leisure_place.average_price
-
-    if leisure_place.is_partner and leisure_place.affiliate_url:
-        return (
-            f"Cabe no seu orcamento e possui parceria. "
-            f"Depois dessa escolha, ainda sobram R$ {remaining_budget:.2f}."
-        )
-
-    return (
-        f"Cabe no seu orcamento. "
-        f"Depois dessa escolha, ainda sobram R$ {remaining_budget:.2f}."
-    )
-
 @router.get("/monthly-leisure", response_model=MonthlyLeisureRecommendationResponse)
 def recommend_monthly_leisure_places(
     city: str,
@@ -83,12 +65,14 @@ def recommend_monthly_leisure_places(
     month: int = Query(ge=1, le=12),
     desired_saving: Decimal = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     available_for_leisure = calculate_available_for_leisure(
         year=year,
         month=month,
         desired_saving=desired_saving,
         db=db,
+        user_id=current_user.id,
     )
 
     query = (
@@ -131,6 +115,7 @@ def calculate_available_for_leisure(
     month: int,
     desired_saving: Decimal,
     db: Session,
+    user_id: int,
 ) -> Decimal:
     start_date = date(year, month, 1)
     last_day = monthrange(year, month)[1]
@@ -138,6 +123,7 @@ def calculate_available_for_leisure(
 
     total_income = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.user_id == user_id,
             Transaction.type == TransactionType.INCOME,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,
@@ -146,6 +132,7 @@ def calculate_available_for_leisure(
 
     total_expense = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.user_id == user_id,
             Transaction.type == TransactionType.EXPENSE,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,
@@ -158,3 +145,21 @@ def calculate_available_for_leisure(
         return Decimal("0.00")
 
     return available_for_leisure
+
+
+def build_recommendation_reason(
+    leisure_place: LeisurePlace,
+    available_budget: Decimal,
+) -> str:
+    remaining_budget = available_budget - leisure_place.average_price
+
+    if leisure_place.is_partner and leisure_place.affiliate_url:
+        return (
+            f"Cabe no seu orcamento e possui parceria. "
+            f"Depois dessa escolha, ainda sobram R$ {remaining_budget:.2f}."
+        )
+
+    return (
+        f"Cabe no seu orcamento. "
+        f"Depois dessa escolha, ainda sobram R$ {remaining_budget:.2f}."
+    )

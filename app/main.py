@@ -12,11 +12,8 @@ from app.api.routes.budget import router as budget_router
 from app.api.routes.insights import router as insights_router
 from app.api.routes.users import router as users_router
 from app.api.routes.auth import router as auth_router
-from app.db.init_db import init_db
 
 app = FastAPI(title="Dinsix Finance API")
-
-init_db()
 
 app.include_router(health_router)
 app.include_router(database_router)

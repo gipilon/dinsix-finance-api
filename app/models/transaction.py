@@ -22,5 +22,7 @@ class Transaction(Base):
     type: Mapped[TransactionType] = mapped_column(String(20), nullable=False)
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
 
     category = relationship("Category")
+    user = relationship("User")
