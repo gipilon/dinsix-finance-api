@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_current_user
 from app.db.dependencies import get_db
 from app.models.category import Category
 from app.models.goal import Goal
 from app.models.transaction import Transaction, TransactionType
+from app.models.user import User
 from app.schemas.insight import CategoryAdjustmentSuggestion, MonthlyAdjustmentInsight
 
 router = APIRouter(prefix="/insights", tags=["insights"])
@@ -21,8 +23,14 @@ def get_monthly_adjustments(
     year: int = Query(ge=2000, le=2100),
     month: int = Query(ge=1, le=12),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    goal = db.get(Goal, goal_id)
+    goal = db.scalar(
+        select(Goal).where(
+            Goal.id == goal_id,
+            Goal.user_id == current_user.id,
+        )
+    )
 
     if not goal:
         raise HTTPException(
@@ -30,7 +38,12 @@ def get_monthly_adjustments(
             detail="Objetivo nao encontrado",
         )
 
-    monthly_balance = calculate_monthly_balance(year=year, month=month, db=db)
+    monthly_balance = calculate_monthly_balance(
+        year=year,
+        month=month,
+        db=db,
+        user_id=current_user.id,
+    )
     required_monthly_saving = calculate_required_monthly_saving(goal)
 
     adjustment_needed = required_monthly_saving - monthly_balance
@@ -54,6 +67,7 @@ def get_monthly_adjustments(
         month=month,
         adjustment_needed=adjustment_needed,
         db=db,
+        user_id=current_user.id,
     )
 
     return MonthlyAdjustmentInsight(
@@ -73,11 +87,17 @@ def get_monthly_adjustments(
     )
 
 
-def calculate_monthly_balance(year: int, month: int, db: Session) -> Decimal:
+def calculate_monthly_balance(
+    year: int,
+    month: int,
+    db: Session,
+    user_id: int,
+) -> Decimal:
     start_date, end_date = get_month_period(year, month)
 
     total_income = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.user_id == user_id,
             Transaction.type == TransactionType.INCOME,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,
@@ -86,6 +106,7 @@ def calculate_monthly_balance(year: int, month: int, db: Session) -> Decimal:
 
     total_expense = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.user_id == user_id,
             Transaction.type == TransactionType.EXPENSE,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,
@@ -122,6 +143,7 @@ def build_category_suggestions(
     month: int,
     adjustment_needed: Decimal,
     db: Session,
+    user_id: int,
 ) -> list[CategoryAdjustmentSuggestion]:
     start_date, end_date = get_month_period(year, month)
 
@@ -133,6 +155,8 @@ def build_category_suggestions(
         )
         .join(Transaction, Transaction.category_id == Category.id)
         .where(
+            Category.user_id == user_id,
+            Transaction.user_id == user_id,
             Transaction.type == TransactionType.EXPENSE,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,

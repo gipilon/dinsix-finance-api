@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_current_user
 from app.db.dependencies import get_db
 from app.models.transaction import Transaction, TransactionType
+from app.models.user import User
 from app.schemas.budget import LeisureBudget
 
 router = APIRouter(prefix="/budget", tags=["budget"])
@@ -19,6 +21,7 @@ def get_leisure_budget(
     month: int = Query(ge=1, le=12),
     desired_saving: Decimal = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     start_date = date(year, month, 1)
     last_day = monthrange(year, month)[1]
@@ -26,6 +29,7 @@ def get_leisure_budget(
 
     total_income = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.user_id == current_user.id,
             Transaction.type == TransactionType.INCOME,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,
@@ -34,6 +38,7 @@ def get_leisure_budget(
 
     total_expense = db.scalar(
         select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.user_id == current_user.id,
             Transaction.type == TransactionType.EXPENSE,
             Transaction.transaction_date >= start_date,
             Transaction.transaction_date <= end_date,
